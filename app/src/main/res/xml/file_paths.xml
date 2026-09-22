@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path
+        name="dashcam"
+        path="DCIM/Dashcam" />
+    <external-path
+        name="dashcam_loop"
+        path="DCIM/Dashcam/loop" />
+</paths>

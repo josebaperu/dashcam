@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dashcam</string>
+    <string name="status_idle">Idle</string>
+    <string name="status_recording">Recording</string>
+    <string name="status_paused">Paused</string>
+    <string name="play">Record</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="stop">Stop</string>
+    <string name="loop">Loop</string>
+    <string name="loop_on">Loop on</string>
+    <string name="loop_off">Loop off</string>
+    <string name="camera">Camera</string>
+    <string name="camera_rear">Rear camera</string>
+    <string name="camera_front">Front camera</string>
+    <string name="permission_needed">Camera permission is required to record.</string>
+    <string name="notification_channel">Dashcam</string>
+    <string name="notification_ready">Dashcam ready</string>
+    <string name="notification_recording">Recording</string>
+    <string name="notification_paused">Recording paused</string>
+    <string name="exit">Exit</string>
+    <string name="info">Info</string>
+    <string name="storage">Storage</string>
+    <string name="back">Back</string>
+    <string name="delete">Delete</string>
+    <string name="delete_all">Delete all</string>
+    <string name="storage_empty">No recordings yet</string>
+    <string name="storage_empty_loop">No loop recordings yet</string>
+    <string name="storage_no_player">No app found to play this video</string>
+    <string name="storage_delete_confirm">Delete %d recording(s)?</string>
+    <string name="storage_delete_all_confirm">Delete all recordings in this list?</string>
+    <string name="storage_recordings">Recordings</string>
+    <string name="storage_loop">Loop recordings</string>
+    <string-array name="storage_folders">
+        <item>@string/storage_recordings</item>
+        <item>@string/storage_loop</item>
+    </string-array>
+</resources>
