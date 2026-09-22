@@ -99,7 +99,7 @@ public final class RecordingEngine {
 
     @MainThread
     public synchronized DashcamStatus snapshot() {
-        return new DashcamStatus(state, loopEnabled, liveDurationMs(), message, useFront);
+        return new DashcamStatus(state, loopEnabled, liveDurationMs(), statusMessage(), useFront);
     }
 
     @MainThread
@@ -330,7 +330,7 @@ public final class RecordingEngine {
             recording = pending.start(ContextCompat.getMainExecutor(app), this::onRecordEvent);
             state = DashcamState.RECORDING;
             startRunningClock();
-            message = "Recording " + currentClipName;
+            message = clipStateMessage();
             ensureHeartbeat();
             emit();
         } catch (SecurityException e) {
@@ -361,14 +361,14 @@ public final class RecordingEngine {
                 freezeClock();
                 state = DashcamState.PAUSED;
                 stopHeartbeat();
-                message = "Paused";
+                message = clipStateMessage();
                 emit();
             }
             case VideoRecordEvent.Resume ignored -> {
                 startRunningClock();
                 state = DashcamState.RECORDING;
                 ensureHeartbeat();
-                message = "Recording";
+                message = clipStateMessage();
                 emit();
             }
             case VideoRecordEvent.Finalize finalize -> {
@@ -445,6 +445,22 @@ public final class RecordingEngine {
         for (Listener listener : listeners) {
             listener.onStatus(status);
         }
+    }
+
+    private String statusMessage() {
+        String clip = clipStateMessage();
+        return clip.isEmpty() ? message : clip;
+    }
+
+    private String clipStateMessage() {
+        if (currentClipName.isEmpty()) {
+            return "";
+        }
+        return switch (state) {
+            case RECORDING -> "Recording " + currentClipName;
+            case PAUSED -> "Paused " + currentClipName;
+            default -> "";
+        };
     }
 
     private long liveDurationMs() {
