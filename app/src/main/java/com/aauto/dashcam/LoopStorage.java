@@ -12,6 +12,8 @@ import android.os.StatFs;
 import android.provider.MediaStore;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 import androidx.camera.video.FileOutputOptions;
 import androidx.camera.video.MediaStoreOutputOptions;
 import androidx.camera.video.PendingRecording;
@@ -38,10 +40,11 @@ final class LoopStorage {
     static final long LOOP_CAP_BYTES = 5L * 1024L * 1024L * 1024L;
     /** ~8 Mbps, typical CameraX 720p with audio. */
     static final long HD_BYTES_PER_SECOND = 1_000_000L;
+    static final long MIN_PUBLISH_BYTES = 50_000L;
 
     private final Context app;
     private final SimpleDateFormat names =
-            new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US);
+            new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US);
 
     LoopStorage(Context context) {
         app = context.getApplicationContext();
@@ -82,6 +85,71 @@ final class LoopStorage {
         File file = new File(publicDir(loop), displayName);
         MediaScannerConnection.scanFile(
                 app, new String[]{file.getAbsolutePath()}, new String[]{"video/mp4"}, null);
+    }
+
+    /**
+     * CameraX writes MediaStore rows with IS_PENDING=1. If Finalize never
+     * publishes them they stay invisible in Gallery and can block later inserts.
+     * Call only while idle.
+     */
+    void cleanupPending() {
+        if (Build.VERSION.SDK_INT < 29) {
+            return;
+        }
+        String[] projection = {
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.SIZE
+        };
+        String selection = MediaStore.MediaColumns.IS_PENDING + "=1 AND "
+                + MediaStore.Video.Media.RELATIVE_PATH + " LIKE ?";
+        String[] args = new String[]{RELATIVE_PATH + "%"};
+        Uri collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+        try (Cursor cursor = queryPending(collection, projection, selection, args)) {
+            if (cursor == null) {
+                return;
+            }
+            int idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID);
+            int sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE);
+            while (cursor.moveToNext()) {
+                Uri uri = ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cursor.getLong(idCol));
+                finishClip(uri, cursor.getLong(sizeCol) >= MIN_PUBLISH_BYTES);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to clean pending clips", e);
+        }
+    }
+
+    void finishClip(@Nullable Uri uri, boolean keep) {
+        if (uri == null || Build.VERSION.SDK_INT < 29) {
+            return;
+        }
+        if (keep) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            try {
+                app.getContentResolver().update(uri, values, null, null);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to publish " + uri, e);
+            }
+            return;
+        }
+        try {
+            app.getContentResolver().delete(uri, null, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to drop pending " + uri, e);
+        }
+    }
+
+    @Nullable
+    private Cursor queryPending(Uri collection, String[] projection, String selection, String[] args) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                collection = MediaStore.setIncludePending(collection);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return app.getContentResolver().query(collection, projection, selection, args, null);
     }
 
     void pruneLoop() {

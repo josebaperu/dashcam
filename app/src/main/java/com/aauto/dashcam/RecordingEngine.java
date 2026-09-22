@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -82,6 +83,7 @@ public final class RecordingEngine {
         storage = new LoopStorage(app);
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         loopEnabled = prefs.getBoolean(KEY_LOOP, false);
+        storage.cleanupPending();
     }
 
     @MainThread
@@ -371,6 +373,14 @@ public final class RecordingEngine {
             }
             case VideoRecordEvent.Finalize finalize -> {
                 recording = null;
+                Uri output = finalize.getOutputResults().getOutputUri();
+                if (output != null && Uri.EMPTY.equals(output)) {
+                    output = null;
+                }
+                boolean keep = !finalize.hasError()
+                        || finalize.getRecordingStats().getNumBytesRecorded()
+                        >= LoopStorage.MIN_PUBLISH_BYTES;
+                storage.finishClip(output, keep);
                 storage.scanIfNeeded(currentClipName, currentClipLoop);
                 if (currentClipLoop) {
                     storage.pruneLoop();

@@ -90,6 +90,7 @@ public class StorageActivity extends AppCompatActivity implements ClipAdapter.Li
     }
 
     private void reload() {
+        storage.cleanupPending();
         List<LoopStorage.Clip> clips = storage.listClips(showingLoop);
         adapter.setClips(clips);
         empty.setText(showingLoop ? R.string.storage_empty_loop : R.string.storage_empty);
