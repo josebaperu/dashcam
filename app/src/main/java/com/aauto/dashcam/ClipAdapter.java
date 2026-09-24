@@ -1,5 +1,6 @@
 package com.aauto.dashcam;
 
+import android.annotation.SuppressLint;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,7 +42,7 @@ final class ClipAdapter extends RecyclerView.Adapter<ClipAdapter.Holder> {
         if (selected.isEmpty()) {
             selecting = false;
         }
-        notifyDataSetChanged();
+        rebindAll();
         listener.onSelectionChanged(selected.size());
     }
 
@@ -62,8 +63,14 @@ final class ClipAdapter extends RecyclerView.Adapter<ClipAdapter.Holder> {
     void clearSelection() {
         selected.clear();
         selecting = false;
-        notifyDataSetChanged();
+        rebindAll();
         listener.onSelectionChanged(0);
+    }
+
+    /** Replacing the list or toggling selection mode (every row's checkbox) needs a full rebind. */
+    @SuppressLint("NotifyDataSetChanged")
+    private void rebindAll() {
+        notifyDataSetChanged();
     }
 
     private Set<android.net.Uri> uris() {
@@ -86,23 +93,28 @@ final class ClipAdapter extends RecyclerView.Adapter<ClipAdapter.Holder> {
     public void onBindViewHolder(@NonNull Holder holder, int position) {
         LoopStorage.Clip clip = clips.get(position);
         holder.name.setText(clip.displayName());
-        holder.meta.setText(dates.format(new Date(clip.dateAddedMs()))
-                + "  ·  " + LoopStorage.formatBytes(clip.sizeBytes()));
+        holder.meta.setText(holder.itemView.getContext().getString(R.string.clip_meta,
+                dates.format(new Date(clip.dateAddedMs())),
+                LoopStorage.formatBytes(clip.sizeBytes())));
         boolean checked = selected.contains(clip.uri());
         holder.check.setVisibility(selecting ? View.VISIBLE : View.GONE);
         holder.check.setChecked(checked);
         holder.itemView.setBackgroundColor(checked ? 0x332A2F38 : 0x00000000);
         holder.itemView.setOnClickListener(v -> {
             if (selecting) {
-                toggle(clip);
+                toggle(clip, holder.getBindingAdapterPosition());
             } else {
                 listener.onOpen(clip);
             }
         });
         holder.itemView.setOnLongClickListener(v -> {
-            selecting = true;
             selected.add(clip.uri());
-            notifyDataSetChanged();
+            if (selecting) {
+                rebindRow(holder.getBindingAdapterPosition());
+            } else {
+                selecting = true;
+                rebindAll();
+            }
             listener.onSelectionChanged(selected.size());
             return true;
         });
@@ -113,15 +125,25 @@ final class ClipAdapter extends RecyclerView.Adapter<ClipAdapter.Holder> {
         return clips.size();
     }
 
-    private void toggle(LoopStorage.Clip clip) {
+    private void toggle(LoopStorage.Clip clip, int position) {
         if (!selected.add(clip.uri())) {
             selected.remove(clip.uri());
         }
         if (selected.isEmpty()) {
             selecting = false;
+            rebindAll();
+        } else {
+            rebindRow(position);
         }
-        notifyDataSetChanged();
         listener.onSelectionChanged(selected.size());
+    }
+
+    private void rebindRow(int position) {
+        if (position == RecyclerView.NO_POSITION) {
+            rebindAll();
+        } else {
+            notifyItemChanged(position);
+        }
     }
 
     static final class Holder extends RecyclerView.ViewHolder {

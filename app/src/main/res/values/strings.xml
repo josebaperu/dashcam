@@ -11,7 +11,6 @@
     <string name="loop">Loop</string>
     <string name="loop_on">Loop on</string>
     <string name="loop_off">Loop off</string>
-    <string name="camera">Camera</string>
     <string name="camera_rear">Rear camera</string>
     <string name="camera_front">Front camera</string>
     <string name="permission_needed">Camera permission is required to record.</string>
@@ -19,6 +18,9 @@
     <string name="notification_ready">Dashcam ready</string>
     <string name="notification_recording">Recording</string>
     <string name="notification_paused">Recording paused</string>
+    <string name="notification_waiting">Waiting for camera</string>
+    <string name="timer_zero">00:00</string>
+    <string name="clip_meta">%1$s  ·  %2$s</string>
     <string name="exit">Exit</string>
     <string name="info">Info</string>
     <string name="storage">Storage</string>
@@ -28,7 +30,10 @@
     <string name="storage_empty">No recordings yet</string>
     <string name="storage_empty_loop">No loop recordings yet</string>
     <string name="storage_no_player">No app found to play this video</string>
-    <string name="storage_delete_confirm">Delete %d recording(s)?</string>
+    <plurals name="storage_delete_confirm">
+        <item quantity="one">Delete %d recording?</item>
+        <item quantity="other">Delete %d recordings?</item>
+    </plurals>
     <string name="storage_delete_all_confirm">Delete all recordings in this list?</string>
     <string name="storage_recordings">Recordings</string>
     <string name="storage_loop">Loop recordings</string>

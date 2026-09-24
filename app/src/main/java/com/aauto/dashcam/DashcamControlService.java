@@ -89,16 +89,20 @@ public class DashcamControlService extends LifecycleService implements Recording
         public void registerCallback(IDashcamCallback callback) {
             if (callback != null) {
                 callbacks.register(callback);
-                DashcamStatus status = engine().snapshot();
-                try {
-                    callback.onStatusChanged(
-                            wireState(status),
-                            status.loopEnabled(),
-                            status.durationMs(),
-                            status.message(),
-                            status.frontCamera());
-                } catch (RemoteException ignored) {
-                }
+                // First snapshot goes out from the main thread like every broadcast, so an older
+                // snapshot can't overtake a newer broadcast. Registering again just re-sends it.
+                main.post(() -> {
+                    DashcamStatus status = engine().snapshot();
+                    try {
+                        callback.onStatusChanged(
+                                wireState(status),
+                                status.loopEnabled(),
+                                status.durationMs(),
+                                status.message(),
+                                status.frontCamera());
+                    } catch (RemoteException ignored) {
+                    }
+                });
             }
         }
 
@@ -165,10 +169,13 @@ public class DashcamControlService extends LifecycleService implements Recording
         callbacks.finishBroadcast();
     }
 
-    /** Idle without a bound camera goes out as STATE_NO_CAMERA so the car can say why. */
+    /** Maps camera problems onto extra wire states so the car can say why nothing records. */
     private static int wireState(DashcamStatus status) {
         if (status.state() == DashcamState.IDLE && !status.cameraReady()) {
             return IDashcamControl.STATE_NO_CAMERA;
+        }
+        if (status.state() == DashcamState.RECORDING && status.waitingForCamera()) {
+            return IDashcamControl.STATE_WAITING_FOR_CAMERA;
         }
         return status.state().code;
     }

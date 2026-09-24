@@ -134,7 +134,8 @@ public class MainActivity extends AppCompatActivity implements RecordingEngine.L
         });
         timer.setText(RecordingService.formatDuration(snapshot.durationMs()));
         message.setText(snapshot.message());
-        recDot.setVisibility(snapshot.state() == DashcamState.RECORDING ? View.VISIBLE : View.INVISIBLE);
+        recDot.setVisibility(snapshot.state() == DashcamState.RECORDING
+                && !snapshot.waitingForCamera() ? View.VISIBLE : View.INVISIBLE);
         loopBadge.setText(snapshot.loopEnabled() ? R.string.loop_on : R.string.loop_off);
         loopBadge.setTextColor(ContextCompat.getColor(
                 this, snapshot.loopEnabled() ? R.color.ok : R.color.text_muted));
@@ -146,6 +147,8 @@ public class MainActivity extends AppCompatActivity implements RecordingEngine.L
         btnPause.setEnabled(snapshot.state() == DashcamState.RECORDING);
         btnResume.setEnabled(snapshot.state() == DashcamState.PAUSED);
         btnStop.setEnabled(snapshot.state() != DashcamState.IDLE);
+        // Switching restarts the clip, which would undo a pause.
+        btnCamera.setEnabled(snapshot.state() != DashcamState.PAUSED);
         btnStorage.setEnabled(snapshot.state() == DashcamState.IDLE);
         btnInfo.setEnabled(snapshot.state() == DashcamState.IDLE);
     }

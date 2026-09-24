@@ -26,8 +26,12 @@ public class RecordingService extends LifecycleService implements RecordingEngin
     public static final String ACTION_EXIT_UI = "com.aauto.dashcam.action.EXIT_UI";
     private static final String CHANNEL_ID = "dashcam_recording";
     private static final int NOTIFICATION_ID = 42;
+    /** Renewed on every status while recording (at least once a second); lapses only if those stop. */
+    private static final long WAKE_LOCK_TIMEOUT_MS = 5L * 60L * 1000L;
 
     private PowerManager.WakeLock wakeLock;
+    /** Text currently shown; Android drops updates from apps posting more than ~5 per second. */
+    @Nullable private String postedText;
 
     public static void start(Context context) {
         try {
@@ -51,7 +55,7 @@ public class RecordingService extends LifecycleService implements RecordingEngin
     public void onCreate() {
         super.onCreate();
         createChannel();
-        startInForeground(getString(R.string.notification_ready));
+        startInForeground(notificationText(DashcamApplication.get(this).engine().snapshot()));
         DashcamApplication.get(this).engine().addListener(this);
         DashcamApplication.get(this).engine().recoverStorage();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -67,7 +71,8 @@ public class RecordingService extends LifecycleService implements RecordingEngin
             closeDown();
             return START_NOT_STICKY;
         }
-        startInForeground(getString(R.string.notification_ready));
+        // Current state, not "ready": this also runs while recording or paused.
+        startInForeground(notificationText(DashcamApplication.get(this).engine().snapshot()));
         return START_STICKY;
     }
 
@@ -99,14 +104,12 @@ public class RecordingService extends LifecycleService implements RecordingEngin
 
     @Override
     public void onStatus(DashcamStatus status) {
-        String text = switch (status.state()) {
-            case RECORDING -> getString(R.string.notification_recording)
-                    + "  " + formatDuration(status.durationMs());
-            case PAUSED -> getString(R.string.notification_paused);
-            case IDLE -> getString(R.string.notification_ready);
-        };
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.notify(NOTIFICATION_ID, notification(text));
+        String text = notificationText(status);
+        if (!text.equals(postedText)) {
+            postedText = text;
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            manager.notify(NOTIFICATION_ID, notification(text));
+        }
         if (status.state() == DashcamState.RECORDING) {
             acquireWakeLock();
         } else {
@@ -114,9 +117,22 @@ public class RecordingService extends LifecycleService implements RecordingEngin
         }
     }
 
+    private String notificationText(DashcamStatus status) {
+        return switch (status.state()) {
+            case RECORDING -> status.waitingForCamera()
+                    ? getString(R.string.notification_waiting)
+                    : getString(R.string.notification_recording)
+                            + "  " + formatDuration(status.durationMs());
+            case PAUSED -> getString(R.string.notification_paused);
+            case IDLE -> getString(R.string.notification_ready);
+        };
+    }
+
     private void startInForeground(String text) {
+        postedText = text;
         int types = 0;
-        if (Build.VERSION.SDK_INT >= 29) {
+        // Camera and microphone service types exist from Android 11; Android 10 needs none.
+        if (Build.VERSION.SDK_INT >= 30) {
             types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                     == PackageManager.PERMISSION_GRANTED) {
@@ -164,13 +180,13 @@ public class RecordingService extends LifecycleService implements RecordingEngin
     }
 
     private void acquireWakeLock() {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            return;
+        if (wakeLock == null) {
+            PowerManager pm = getSystemService(PowerManager.class);
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dashcam:recording");
+            wakeLock.setReferenceCounted(false);
         }
-        PowerManager pm = getSystemService(PowerManager.class);
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dashcam:recording");
-        wakeLock.setReferenceCounted(false);
-        wakeLock.acquire();
+        // Not reference counted, so this just pushes the timeout back while recording continues.
+        wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS);
     }
 
     private void releaseWakeLock() {

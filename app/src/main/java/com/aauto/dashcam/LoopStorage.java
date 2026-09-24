@@ -228,7 +228,8 @@ final class LoopStorage {
 
     @Nullable
     private Cursor queryPending(Uri collection, String[] projection, String selection, String[] args) {
-        if (Build.VERSION.SDK_INT >= 30) {
+        // From Android 10: without it pending rows are invisible and crash leftovers never recover.
+        if (Build.VERSION.SDK_INT >= 29) {
             try {
                 collection = MediaStore.setIncludePending(collection);
             } catch (RuntimeException ignored) {

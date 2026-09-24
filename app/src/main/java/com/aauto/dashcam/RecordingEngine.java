@@ -40,7 +40,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Owns the camera, a low-res preview, and one active recording at a time.
- * Defaults to the rear camera. Loop mode splits the capture into 60-second clips.
+ * Defaults to the rear camera. Recordings are split into clips of up to 10 minutes;
+ * loop mode stores them in the size-capped loop folder.
  */
 public final class RecordingEngine {
     public interface Listener {
@@ -53,6 +54,8 @@ public final class RecordingEngine {
     static final long LOOP_SEGMENT_MS = 10L * 60L * 1000L;
     /** Clips in a row that may fail with no footage before recording gives up. */
     private static final int MAX_FAILED_CLIPS = 3;
+    /** No encoded frame for this long while recording means the camera isn't delivering. */
+    private static final long CAMERA_STALL_MS = 5_000L;
 
     /**
      * One started clip. Its CameraX events carry it, so a late event from a clip that was
@@ -87,6 +90,8 @@ public final class RecordingEngine {
     /** The clip whose events drive state; stays set after stop() until its Finalize arrives. */
     @Nullable private Segment openSegment;
     private int failedClips;
+    private long lastFrameElapsed;
+    private boolean waitingForCamera;
     private String message = "Ready";
 
     public RecordingEngine(Context context) {
@@ -121,11 +126,12 @@ public final class RecordingEngine {
     @MainThread
     public synchronized DashcamStatus snapshot() {
         return new DashcamStatus(state, loopEnabled, liveDurationMs(), statusMessage(), useFront,
-                videoCapture != null);
+                videoCapture != null, waitingForCamera);
     }
 
+    // Synchronized like the rest: binder threads read videoCapture through snapshot().
     @MainThread
-    public void bindToLifecycle(LifecycleOwner owner) {
+    public synchronized void bindToLifecycle(LifecycleOwner owner) {
         lifecycleOwner = owner;
         if (cameraProvider != null) {
             bindUseCases();
@@ -133,13 +139,15 @@ public final class RecordingEngine {
         }
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(app);
         future.addListener(() -> {
-            try {
-                cameraProvider = future.get();
-                bindUseCases();
-            } catch (Exception e) {
-                Log.e(TAG, "Camera provider failed", e);
-                message = "Camera unavailable";
-                emit();
+            synchronized (this) {
+                try {
+                    cameraProvider = future.get();
+                    bindUseCases();
+                } catch (Exception e) {
+                    Log.e(TAG, "Camera provider failed", e);
+                    message = "Camera unavailable";
+                    emit();
+                }
             }
         }, ContextCompat.getMainExecutor(app));
     }
@@ -261,6 +269,10 @@ public final class RecordingEngine {
 
     @MainThread
     public synchronized void toggleCamera() {
+        if (state == DashcamState.PAUSED) {
+            // A switch restarts the clip, which would silently undo the pause; the UIs disable it.
+            return;
+        }
         boolean nextFront = !useFront;
         CameraSelector selector = selectorFor(nextFront);
         if (cameraProvider != null) {
@@ -278,7 +290,7 @@ public final class RecordingEngine {
         }
         useFront = nextFront;
         message = useFront ? "Front camera" : "Rear camera";
-        boolean restart = state == DashcamState.RECORDING || state == DashcamState.PAUSED;
+        boolean restart = state == DashcamState.RECORDING;
         if (recording != null) {
             pendingCameraSwitch = true;
             wantRecording = restart;
@@ -390,6 +402,14 @@ public final class RecordingEngine {
         }
         switch (event) {
             case VideoRecordEvent.Status status -> {
+                // CameraX sends one per encoded frame (~30/s), so this doesn't emit; the
+                // heartbeat publishes once a second. A frame arriving proves we're recording.
+                lastFrameElapsed = SystemClock.elapsedRealtime();
+                if (waitingForCamera) {
+                    waitingForCamera = false;
+                    startRunningClock();
+                    emit();
+                }
                 long recordedMs = TimeUnit.NANOSECONDS.toMillis(
                         status.getRecordingStats().getRecordedDurationNanos());
                 if (wantRecording && !rotating
@@ -399,7 +419,6 @@ public final class RecordingEngine {
                     recording.stop();
                     recording = null;
                 }
-                emit();
             }
             case VideoRecordEvent.Pause ignored -> {
                 freezeClock();
@@ -522,7 +541,9 @@ public final class RecordingEngine {
             return "";
         }
         return switch (state) {
-            case RECORDING -> "Recording " + currentClipName;
+            case RECORDING -> waitingForCamera
+                    ? "Waiting for camera"
+                    : "Recording " + currentClipName;
             case PAUSED -> "Paused " + currentClipName;
             default -> "";
         };
@@ -553,6 +574,9 @@ public final class RecordingEngine {
     }
 
     private void ensureHeartbeat() {
+        // (Re)start watching: the camera gets CAMERA_STALL_MS to deliver its first frame.
+        lastFrameElapsed = SystemClock.elapsedRealtime();
+        waitingForCamera = false;
         mainHandler.removeCallbacks(heartbeat);
         mainHandler.postDelayed(heartbeat, 1000L);
     }
@@ -565,6 +589,13 @@ public final class RecordingEngine {
         synchronized (this) {
             if (state != DashcamState.RECORDING) {
                 return;
+            }
+            if (!waitingForCamera
+                    && SystemClock.elapsedRealtime() - lastFrameElapsed > CAMERA_STALL_MS) {
+                // Camera taken by another app, or never started streaming: stop the clock so
+                // REC doesn't count footage that isn't being saved.
+                waitingForCamera = true;
+                freezeClock();
             }
             emit();
             mainHandler.removeCallbacks(heartbeat);

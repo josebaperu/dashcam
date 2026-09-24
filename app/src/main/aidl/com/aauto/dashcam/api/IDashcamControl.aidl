@@ -8,6 +8,8 @@ interface IDashcamControl {
     const int STATE_PAUSED = 2;
     /** Idle and no camera bound: Dashcam has to be opened on the phone before recording. */
     const int STATE_NO_CAMERA = 3;
+    /** Recording, but no frames are arriving (e.g. another app has the camera); clock frozen. */
+    const int STATE_WAITING_FOR_CAMERA = 4;
 
     oneway void play();
     oneway void pause();

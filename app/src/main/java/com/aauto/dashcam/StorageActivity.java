@@ -105,7 +105,8 @@ public class StorageActivity extends AppCompatActivity implements ClipAdapter.Li
             return;
         }
         new AlertDialog.Builder(this)
-                .setMessage(getString(R.string.storage_delete_confirm, clips.size()))
+                .setMessage(getResources().getQuantityString(
+                        R.plurals.storage_delete_confirm, clips.size(), clips.size()))
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton(R.string.delete, (d, w) -> {
                     for (LoopStorage.Clip clip : clips) {

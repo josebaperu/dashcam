@@ -6,9 +6,7 @@ public record DashcamStatus(
         long durationMs,
         String message,
         boolean frontCamera,
-        boolean cameraReady
+        boolean cameraReady,
+        boolean waitingForCamera
 ) {
-    public static DashcamStatus idle(boolean loopEnabled, String message) {
-        return new DashcamStatus(DashcamState.IDLE, loopEnabled, 0L, message, false, false);
-    }
 }
