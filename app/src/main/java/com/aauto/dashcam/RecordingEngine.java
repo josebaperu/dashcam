@@ -83,7 +83,15 @@ public final class RecordingEngine {
         storage = new LoopStorage(app);
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         loopEnabled = prefs.getBoolean(KEY_LOOP, false);
-        storage.cleanupPending();
+        storage.cleanupOrphans();
+    }
+
+    @MainThread
+    public synchronized void recoverStorage() {
+        if (state == DashcamState.RECORDING || state == DashcamState.PAUSED) {
+            return;
+        }
+        storage.cleanupOrphans();
     }
 
     @MainThread
@@ -187,6 +195,7 @@ public final class RecordingEngine {
         wantRecording = true;
         rotating = false;
         resetDuration();
+        storage.cleanupOrphans();
         startClip();
     }
 

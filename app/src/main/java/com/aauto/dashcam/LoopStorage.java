@@ -55,7 +55,8 @@ final class LoopStorage {
     }
 
     String newDisplayName() {
-        return "dashcam_" + names.format(new Date()) + ".mp4";
+        return "dashcam_" + names.format(new Date())
+                + "_" + (System.nanoTime() % 10_000L) + ".mp4";
     }
 
     PendingRecording prepare(Recorder recorder, Context context, String displayName, boolean loop) {
@@ -88,35 +89,116 @@ final class LoopStorage {
     }
 
     /**
-     * CameraX writes MediaStore rows with IS_PENDING=1. If Finalize never
-     * publishes them they stay invisible in Gallery and can block later inserts.
-     * Call only while idle.
+     * Call only while idle. CameraX leaves MediaStore IS_PENDING=1 rows and
+     * cache temps; those stay invisible and can block the next insert until
+     * app storage is cleared. RELATIVE_PATH is often still null on pending
+     * rows, so this scans every pending video this app can see.
      */
+    void cleanupOrphans() {
+        cleanupPending();
+        sweepEmptyAlbumFiles();
+        sweepAppTemps();
+    }
+
     void cleanupPending() {
         if (Build.VERSION.SDK_INT < 29) {
             return;
         }
         String[] projection = {
                 MediaStore.Video.Media._ID,
-                MediaStore.Video.Media.SIZE
+                MediaStore.Video.Media.SIZE,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.RELATIVE_PATH
         };
-        String selection = MediaStore.MediaColumns.IS_PENDING + "=1 AND "
-                + MediaStore.Video.Media.RELATIVE_PATH + " LIKE ?";
-        String[] args = new String[]{RELATIVE_PATH + "%"};
+        String selection = MediaStore.MediaColumns.IS_PENDING + "=1";
         Uri collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
-        try (Cursor cursor = queryPending(collection, projection, selection, args)) {
+        int cleaned = 0;
+        try (Cursor cursor = queryPending(collection, projection, selection, null)) {
             if (cursor == null) {
                 return;
             }
             int idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID);
             int sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE);
+            int nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME);
+            int pathCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.RELATIVE_PATH);
             while (cursor.moveToNext()) {
+                String name = cursor.getString(nameCol);
+                String path = cursor.getString(pathCol);
+                if (!ours(name, path)) {
+                    continue;
+                }
                 Uri uri = ContentUris.withAppendedId(
                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cursor.getLong(idCol));
                 finishClip(uri, cursor.getLong(sizeCol) >= MIN_PUBLISH_BYTES);
+                cleaned++;
             }
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to clean pending clips", e);
+        }
+        if (cleaned > 0) {
+            Log.i(TAG, "Recovered or dropped " + cleaned + " pending MediaStore rows");
+        }
+    }
+
+    private static boolean ours(String displayName, String relativePath) {
+        if (displayName != null && displayName.startsWith("dashcam_")) {
+            return true;
+        }
+        if (relativePath != null && relativePath.contains(ALBUM)) {
+            return true;
+        }
+        return displayName == null && relativePath == null;
+    }
+
+    private void sweepEmptyAlbumFiles() {
+        sweepEmptyFiles(publicDir(false));
+        sweepEmptyFiles(publicDir(true));
+    }
+
+    private static void sweepEmptyFiles(File dir) {
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (file.isFile() && file.length() == 0L && file.getName().endsWith(".mp4")) {
+                if (!file.delete()) {
+                    Log.w(TAG, "Unable to delete empty " + file);
+                }
+            }
+        }
+    }
+
+    private void sweepAppTemps() {
+        wipeVideoTemps(app.getCacheDir());
+        wipeVideoTemps(app.getExternalCacheDir());
+        wipeVideoTemps(new File(app.getFilesDir(), "video"));
+        wipeVideoTemps(new File(app.getNoBackupFilesDir(), "video"));
+    }
+
+    private static void wipeVideoTemps(@Nullable File dir) {
+        if (dir == null || !dir.isDirectory()) {
+            return;
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            String name = file.getName().toLowerCase(Locale.US);
+            if (file.isDirectory()) {
+                if (name.contains("camera") || name.contains("video") || name.contains("record")) {
+                    wipeVideoTemps(file);
+                    file.delete();
+                }
+                continue;
+            }
+            if (name.endsWith(".tmp") || name.endsWith(".mp4") || name.endsWith(".pending")
+                    || name.startsWith("camerax") || name.startsWith("recording")) {
+                if (!file.delete()) {
+                    Log.w(TAG, "Unable to delete temp " + file);
+                }
+            }
         }
     }
 

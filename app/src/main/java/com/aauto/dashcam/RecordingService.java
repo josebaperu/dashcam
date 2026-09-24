@@ -53,6 +53,7 @@ public class RecordingService extends LifecycleService implements RecordingEngin
         createChannel();
         startInForeground(getString(R.string.notification_ready));
         DashcamApplication.get(this).engine().addListener(this);
+        DashcamApplication.get(this).engine().recoverStorage();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
             DashcamApplication.get(this).engine().bindToLifecycle(this);
