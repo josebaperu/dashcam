@@ -13,6 +13,8 @@ import androidx.lifecycle.LifecycleService;
 import com.aauto.dashcam.api.IDashcamCallback;
 import com.aauto.dashcam.api.IDashcamControl;
 
+import java.util.Objects;
+
 /**
  * Signature-protected binder that the Android Auto helper uses to drive the camera.
  */
@@ -24,6 +26,7 @@ public class DashcamControlService extends LifecycleService implements Recording
     private int lastBroadcastState = Integer.MIN_VALUE;
     private boolean lastBroadcastLoop;
     private boolean lastBroadcastFront;
+    private String lastBroadcastMessage;
     private long lastBroadcastBucket = Long.MIN_VALUE;
 
     private final IDashcamControl.Stub binder = new IDashcamControl.Stub() {
@@ -133,7 +136,8 @@ public class DashcamControlService extends LifecycleService implements Recording
         long bucket = status.durationMs() / DURATION_BUCKET_MS;
         boolean stateChanged = status.state().code != lastBroadcastState
                 || status.loopEnabled() != lastBroadcastLoop
-                || status.frontCamera() != lastBroadcastFront;
+                || status.frontCamera() != lastBroadcastFront
+                || !Objects.equals(status.message(), lastBroadcastMessage);
         boolean tick = bucket != lastBroadcastBucket;
         if (!stateChanged && !tick) {
             return;
@@ -141,6 +145,7 @@ public class DashcamControlService extends LifecycleService implements Recording
         lastBroadcastState = status.state().code;
         lastBroadcastLoop = status.loopEnabled();
         lastBroadcastFront = status.frontCamera();
+        lastBroadcastMessage = status.message();
         lastBroadcastBucket = bucket;
 
         int count = callbacks.beginBroadcast();
