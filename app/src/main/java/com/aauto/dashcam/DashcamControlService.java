@@ -62,7 +62,7 @@ public class DashcamControlService extends LifecycleService implements Recording
 
         @Override
         public int getState() {
-            return engine().snapshot().state().code;
+            return wireState(engine().snapshot());
         }
 
         @Override
@@ -92,7 +92,7 @@ public class DashcamControlService extends LifecycleService implements Recording
                 DashcamStatus status = engine().snapshot();
                 try {
                     callback.onStatusChanged(
-                            status.state().code,
+                            wireState(status),
                             status.loopEnabled(),
                             status.durationMs(),
                             status.message(),
@@ -113,7 +113,8 @@ public class DashcamControlService extends LifecycleService implements Recording
     @Override
     public void onCreate() {
         super.onCreate();
-        RecordingService.start(this);
+        // No RecordingService.start here: a bind can arrive while Dashcam is in the background,
+        // where Android won't grant a camera foreground service. Report STATE_NO_CAMERA instead.
         engine().addListener(this);
     }
 
@@ -134,7 +135,8 @@ public class DashcamControlService extends LifecycleService implements Recording
     @Override
     public void onStatus(DashcamStatus status) {
         long bucket = status.durationMs() / DURATION_BUCKET_MS;
-        boolean stateChanged = status.state().code != lastBroadcastState
+        int wireState = wireState(status);
+        boolean stateChanged = wireState != lastBroadcastState
                 || status.loopEnabled() != lastBroadcastLoop
                 || status.frontCamera() != lastBroadcastFront
                 || !Objects.equals(status.message(), lastBroadcastMessage);
@@ -142,7 +144,7 @@ public class DashcamControlService extends LifecycleService implements Recording
         if (!stateChanged && !tick) {
             return;
         }
-        lastBroadcastState = status.state().code;
+        lastBroadcastState = wireState;
         lastBroadcastLoop = status.loopEnabled();
         lastBroadcastFront = status.frontCamera();
         lastBroadcastMessage = status.message();
@@ -152,7 +154,7 @@ public class DashcamControlService extends LifecycleService implements Recording
         for (int i = 0; i < count; i++) {
             try {
                 callbacks.getBroadcastItem(i).onStatusChanged(
-                        status.state().code,
+                        wireState,
                         status.loopEnabled(),
                         status.durationMs(),
                         status.message(),
@@ -161,6 +163,14 @@ public class DashcamControlService extends LifecycleService implements Recording
             }
         }
         callbacks.finishBroadcast();
+    }
+
+    /** Idle without a bound camera goes out as STATE_NO_CAMERA so the car can say why. */
+    private static int wireState(DashcamStatus status) {
+        if (status.state() == DashcamState.IDLE && !status.cameraReady()) {
+            return IDashcamControl.STATE_NO_CAMERA;
+        }
+        return status.state().code;
     }
 
     private RecordingEngine engine() {

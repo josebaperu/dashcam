@@ -90,7 +90,9 @@ public class StorageActivity extends AppCompatActivity implements ClipAdapter.Li
     }
 
     private void reload() {
-        storage.cleanupOrphans();
+        // Via the engine: recording can start from the car while this screen is open, and
+        // cleanup must not touch the pending row of a clip being recorded.
+        DashcamApplication.get(this).engine().recoverStorage();
         List<LoopStorage.Clip> clips = storage.listClips(showingLoop);
         adapter.setClips(clips);
         empty.setText(showingLoop ? R.string.storage_empty_loop : R.string.storage_empty);

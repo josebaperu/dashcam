@@ -41,6 +41,9 @@ final class LoopStorage {
     /** ~8 Mbps, typical CameraX 720p with audio. */
     static final long HD_BYTES_PER_SECOND = 1_000_000L;
     static final long MIN_PUBLISH_BYTES = 50_000L;
+    /** One full-length clip at the HD estimate (~600 MB). */
+    static final long CLIP_RESERVE_BYTES =
+            RecordingEngine.LOOP_SEGMENT_MS / 1000L * HD_BYTES_PER_SECOND;
 
     private final Context app;
     private final SimpleDateFormat names =
@@ -234,13 +237,22 @@ final class LoopStorage {
         return app.getContentResolver().query(collection, projection, selection, args, null);
     }
 
+    /**
+     * Deletes the oldest loop clips while over the 5 GB cap or while the phone lacks room
+     * for one more full clip; otherwise a full phone stops loop recording instead of looping.
+     */
     void pruneLoop() {
         int guard = 0;
-        while (usedBytes(true) > LOOP_CAP_BYTES && guard++ < 1000) {
+        while ((usedBytes(true) > LOOP_CAP_BYTES || lacksRoomForClip()) && guard++ < 1000) {
             if (!deleteOldest(true)) {
                 return;
             }
         }
+    }
+
+    private boolean lacksRoomForClip() {
+        long free = availableBytes();
+        return free >= 0L && free < CLIP_RESERVE_BYTES;
     }
 
     private boolean deleteOldest(boolean loop) {
@@ -267,6 +279,7 @@ final class LoopStorage {
         }
     }
 
+    /** Free bytes on the DCIM volume, or -1 if it can't be read. */
     long availableBytes() {
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
         if (dir == null || dir.getAbsolutePath() == null) {
@@ -280,7 +293,7 @@ final class LoopStorage {
             return new StatFs(dir.getAbsolutePath()).getAvailableBytes();
         } catch (IllegalArgumentException e) {
             Log.w(TAG, "Unable to read free space", e);
-            return 0L;
+            return -1L;
         }
     }
 
