@@ -138,6 +138,11 @@ public class RecordingService extends LifecycleService implements RecordingEngin
                     == PackageManager.PERMISSION_GRANTED) {
                 types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
             }
+            // Keeps GPS speed updating for the overlay while the app is in the background.
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+                types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            }
         }
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(text), types);

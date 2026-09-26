@@ -98,6 +98,13 @@ public class MainActivity extends AppCompatActivity implements RecordingEngine.L
 
         if (hasRequiredPermissions()) {
             startCameraSession();
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                // Installs that predate the speed overlay only granted camera/mic.
+                permissionLauncher.launch(new String[]{
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION});
+            }
         } else {
             permissionLauncher.launch(neededPermissions());
         }
@@ -164,6 +171,7 @@ public class MainActivity extends AppCompatActivity implements RecordingEngine.L
     private void startCameraSession() {
         RecordingService.start(this);
         engine().attachPreview(preview);
+        engine().startSpeedTracking();
     }
 
     private void applyScreenPadding(View root) {
@@ -213,6 +221,8 @@ public class MainActivity extends AppCompatActivity implements RecordingEngine.L
         ArrayList<String> perms = new ArrayList<>();
         perms.add(Manifest.permission.CAMERA);
         perms.add(Manifest.permission.RECORD_AUDIO);
+        perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         if (Build.VERSION.SDK_INT <= 28) {
             perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }

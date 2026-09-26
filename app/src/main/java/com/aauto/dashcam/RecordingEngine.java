@@ -17,6 +17,7 @@ import androidx.annotation.Nullable;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.CameraInfoUnavailableException;
 import androidx.camera.core.Preview;
+import androidx.camera.core.UseCaseGroup;
 import androidx.camera.core.resolutionselector.ResolutionSelector;
 import androidx.camera.core.resolutionselector.ResolutionStrategy;
 import androidx.camera.lifecycle.ProcessCameraProvider;
@@ -70,6 +71,7 @@ public final class RecordingEngine {
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable heartbeat = this::onHeartbeat;
+    private final FootageOverlay overlay;
 
     @Nullable private ProcessCameraProvider cameraProvider;
     @Nullable private Preview preview;
@@ -97,6 +99,7 @@ public final class RecordingEngine {
     public RecordingEngine(Context context) {
         app = context.getApplicationContext();
         storage = new LoopStorage(app);
+        overlay = new FootageOverlay(app);
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         loopEnabled = prefs.getBoolean(KEY_LOOP, false);
         storage.cleanupOrphans();
@@ -152,6 +155,14 @@ public final class RecordingEngine {
         }, ContextCompat.getMainExecutor(app));
     }
 
+    /** Picks up a location permission granted after the camera was already bound. */
+    @MainThread
+    public synchronized void startSpeedTracking() {
+        if (lifecycleOwner != null) {
+            overlay.start();
+        }
+    }
+
     @MainThread
     public void attachPreview(PreviewView previewView) {
         surfaceProvider = previewView.getSurfaceProvider();
@@ -182,6 +193,7 @@ public final class RecordingEngine {
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
+        overlay.stop();
         preview = null;
         videoCapture = null;
         lifecycleOwner = null;
@@ -348,8 +360,12 @@ public final class RecordingEngine {
             cameraProvider.bindToLifecycle(
                     lifecycleOwner,
                     selectorFor(useFront),
-                    preview,
-                    videoCapture);
+                    new UseCaseGroup.Builder()
+                            .addUseCase(preview)
+                            .addUseCase(videoCapture)
+                            .addEffect(overlay.effect())
+                            .build());
+            overlay.start();
             message = useFront ? "Front camera" : "Rear camera";
         } catch (RuntimeException e) {
             Log.e(TAG, "Bind camera failed", e);
